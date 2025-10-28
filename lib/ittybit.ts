@@ -1,3 +1,5 @@
 import { IttybitClient } from "@ittybit/sdk";
 
-const ittybit = new IttybitClient({ apiKey: "ITTYBIT_API_KEY" });
+export const ittybit = new IttybitClient({
+  apiKey: process.env.ITTYBIT_API_KEY!,
+});
