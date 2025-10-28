@@ -1,102 +1,148 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  UseMutationResult,
+} from "@tanstack/react-query";
+import axios from "axios";
+
+interface FileItem {
+  id: string;
+  filename: string;
+  url: string;
+}
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
-  const [files, setFiles] = useState<any[]>([]);
-  const [rename, setRename] = useState("");
+  const [renameMap, setRenameMap] = useState<Record<string, string>>({});
 
-  async function upload() {
+  const queryClient = useQueryClient();
+
+  const { data: files = [], isLoading: isFilesLoading } = useQuery<
+    FileItem[],
+    Error
+  >({
+    queryKey: ["files"],
+    queryFn: async () => {
+      const res = await axios.get<FileItem[]>("/api/files");
+      return res.data;
+    },
+  });
+
+  const uploadMutation: UseMutationResult<void, unknown, File> = useMutation({
+    mutationFn: async (file: File) => {
+      const { data } = await axios.post<{ url: string; method: string }>(
+        "/api/sign-upload",
+        { filename: file.name }
+      );
+      await axios({ url: data.url, method: data.method, data: file });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["files"] }),
+  });
+
+  const deleteMutation: UseMutationResult<void, unknown, string> = useMutation({
+    mutationFn: async (id: string) => {
+      await axios.delete(`/api/files/${id}`);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["files"] }),
+  });
+
+  const renameMutation: UseMutationResult<
+    void,
+    unknown,
+    { id: string; filename: string }
+  > = useMutation({
+    mutationFn: async ({ id, filename }: { id: string; filename: string }) => {
+      await axios.patch(`/api/files/${id}`, { filename });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["files"] }),
+  });
+
+  const handleUpload = () => {
     if (!file) return;
-    const res = await fetch("/api/sign-upload", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filename: file.name }),
-    });
-    const { url, method } = await res.json();
-    await fetch(url, { method, body: file });
-    refresh();
-  }
+    uploadMutation.mutate(file);
+  };
 
-  async function refresh() {
-    const res = await fetch("/api/files");
-    setFiles(await res.json());
-  }
+  const handleDelete = (id: string) => {
+    deleteMutation.mutate(id);
+  };
 
-  async function remove(id: string) {
-    await fetch(`/api/files/${id}`, { method: "DELETE" });
-    refresh();
-  }
-
-  async function renameFile(id: string) {
-    if (!rename) return;
-    await fetch(`/api/files/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filename: rename }),
-    });
-    setRename("");
-    refresh();
-  }
-
-  useEffect(() => {
-    refresh();
-  }, []);
+  const handleRename = (id: string) => {
+    const filename = renameMap[id];
+    if (!filename) return;
+    renameMutation.mutate({ id, filename });
+    setRenameMap((prev) => ({ ...prev, [id]: "" }));
+  };
 
   return (
     <main className="p-8 max-w-xl mx-auto space-y-6">
       <h1 className="text-2xl font-semibold">Ittybit Upload Demo</h1>
 
-      <input
-        type="file"
-        onChange={(e) => setFile(e.target.files?.[0] || null)}
-      />
-      <button
-        onClick={upload}
-        className="bg-black text-white px-4 py-2 rounded"
-      >
-        Upload
-      </button>
+      <div className="flex items-center gap-2">
+        <input
+          type="file"
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+        />
+        <button
+          onClick={handleUpload}
+          disabled={uploadMutation.isPending}
+          className="bg-black text-white px-4 py-2 rounded disabled:opacity-50"
+        >
+          {uploadMutation.isPending ? "Uploading..." : "Upload"}
+        </button>
+      </div>
 
       <div>
         <h2 className="text-xl font-medium">Your Files</h2>
-        <ul className="space-y-3">
-          {files.map((f) => (
-            <li key={f.id} className="flex items-center justify-between">
-              <a
-                href={f.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 underline"
-              >
-                {f.filename}
-              </a>
-              <div className="space-x-2">
-                <input
-                  type="text"
-                  placeholder="Rename"
-                  className="border px-2 py-1 text-sm"
-                  value={rename}
-                  onChange={(e) => setRename(e.target.value)}
-                />
-                <button
-                  onClick={() => renameFile(f.id)}
-                  className="text-xs bg-gray-200 px-2 py-1 rounded"
+        {isFilesLoading ? (
+          <p>Loading files...</p>
+        ) : (
+          <ul className="space-y-3">
+            {files.map((f) => (
+              <li key={f.id} className="flex items-center justify-between">
+                <a
+                  href={f.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 underline"
                 >
-                  Rename
-                </button>
-                <button
-                  onClick={() => remove(f.id)}
-                  className="text-xs bg-red-500 text-white px-2 py-1 rounded"
-                >
-                  Delete
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+                  {f.filename}
+                </a>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Rename"
+                    className="border px-2 py-1 text-sm"
+                    value={renameMap[f.id] || ""}
+                    onChange={(e) =>
+                      setRenameMap((prev) => ({
+                        ...prev,
+                        [f.id]: e.target.value,
+                      }))
+                    }
+                  />
+                  <button
+                    onClick={() => handleRename(f.id)}
+                    disabled={renameMutation.isPending}
+                    className="text-xs bg-gray-200 px-2 py-1 rounded disabled:opacity-50"
+                  >
+                    {renameMutation.isPending ? "Renaming..." : "Rename"}
+                  </button>
+                  <button
+                    onClick={() => handleDelete(f.id)}
+                    disabled={deleteMutation.isPending}
+                    className="text-xs bg-red-500 text-white px-2 py-1 rounded disabled:opacity-50"
+                  >
+                    {deleteMutation.isPending ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </main>
   );
