@@ -7,21 +7,21 @@ import { useEffect, useState, type ReactNode } from "react";
  * ------------------------------------------------------------------*/
 function Callout({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded border p-3 bg-gray-50">
-      <p className="font-medium">{title}</p>
-      <div className="mt-1 text-sm text-gray-700">{children}</div>
+    <div className="rounded border border-border p-3 bg-card">
+      <p className="font-medium text-card-foreground">{title}</p>
+      <div className="mt-1 text-sm text-muted-foreground">{children}</div>
     </div>
   );
 }
 
 function Hint({ children }: { children: ReactNode }) {
-  return <p className="text-xs text-gray-500">{children}</p>;
+  return <p className="text-xs text-muted-foreground">{children}</p>;
 }
 
 /* ==================================================================
  * SECTION 1 — URL Upload → Playback
  * What: Send a public .mp4 URL to /api/upload (server proxies to POST https://api.ittybit.com/files)
- * Why: Easiest “hello world” to get a playable URL back.
+ * Why: Easiest "hello world" to get a playable URL back.
  * ==================================================================*/
 function SectionUrlUpload() {
   const [inputUrl, setInputUrl] = useState("");
@@ -111,13 +111,13 @@ function SectionUrlUpload() {
         <Hint>
           Expected response:&nbsp;
           <code>{'{ id, status: "ready", url }'}</code>. For very large files, processing can take a
-          moment—reload the gallery below if you don’t see it immediately.
+          moment—reload the gallery below if you don't see it immediately.
         </Hint>
       </Callout>
 
       <div className="flex gap-2">
         <input
-          className="flex-1 border p-2 rounded"
+          className="flex-1 border border-input bg-background text-foreground p-2 rounded"
           placeholder="https://example.com/video.mp4"
           value={inputUrl}
           onChange={(e) => setInputUrl(e.target.value)}
@@ -125,16 +125,16 @@ function SectionUrlUpload() {
         <button
           onClick={handleUpload}
           disabled={!inputUrl || loading}
-          className="bg-black text-white px-4 py-2 rounded"
+          className="bg-primary text-primary-foreground px-4 py-2 rounded hover:bg-primary/90 disabled:opacity-50"
           title="Calls /api/upload → Ittybit POST /files with { url }"
         >
           {loading ? "Uploading…" : "Upload"}
         </button>
       </div>
 
-      {error && <p className="text-red-600 text-sm">{error}</p>}
+      {error && <p className="text-destructive text-sm">{error}</p>}
       {statusText && (
-        <p className="text-xs text-gray-600">
+        <p className="text-xs text-muted-foreground">
           {statusText}
           {taskId ? ` (task ${taskId})` : ""}
         </p>
@@ -142,7 +142,7 @@ function SectionUrlUpload() {
 
       {file && (
         <div className="space-y-1">
-          <p className="text-xs text-gray-600 break-all">
+          <p className="text-xs text-muted-foreground break-all">
             ✅ Created file <code>{file.id}</code> — playing delivery URL below:
           </p>
           <video controls className="w-full rounded" src={file.url} />
@@ -225,10 +225,10 @@ function SectionSignedPut() {
   return (
     <section id="signed-put" className="space-y-3">
       <div className="flex items-center justify-between gap-4">
-        <h2 className="text-xl font-semibold">2) Signed Uploads (Client-safe PUT)</h2>
+        <h2 className="text-xl font-semibold text-foreground">2) Signed Uploads (Client-safe PUT)</h2>
         <button
           type="button"
-          className="text-sm underline"
+          className="text-sm text-primary hover:text-primary/80 underline"
           onClick={() => setShowDetails((prev) => !prev)}
           aria-expanded={showDetails}
           aria-controls={contentId}
@@ -258,7 +258,7 @@ function SectionSignedPut() {
           <button
             onClick={startUpload}
             disabled={!file || busy}
-            className="bg-black text-white px-4 py-2 rounded"
+            className="bg-primary text-primary-foreground px-4 py-2 rounded hover:bg-primary/90 disabled:opacity-50"
             title="Requests a signed PUT URL, then uploads the file to it"
           >
             {busy ? "Uploading…" : "Upload with Signed PUT"}
@@ -267,7 +267,7 @@ function SectionSignedPut() {
           {uploadUrl && (
             <button
               type="button"
-              className="px-3 py-2 border rounded text-xs"
+              className="px-3 py-2 border border-border rounded text-xs hover:bg-accent"
               onClick={() => navigator.clipboard.writeText(uploadUrl)}
               title="Copy the one-time signed upload URL"
             >
@@ -277,14 +277,14 @@ function SectionSignedPut() {
         </div>
 
         {/* 🧠 Helpful output and error messages */}
-        {uploadUrl && <p className="text-xs break-all">PUT → {uploadUrl}</p>}
+        {uploadUrl && <p className="text-xs break-all text-muted-foreground">PUT → {uploadUrl}</p>}
         {resultUrl && (
-          <p className="text-xs break-all text-green-700">
+          <p className="text-xs break-all text-chart-2">
             ✅ Uploaded successfully → {resultUrl}
           </p>
         )}
         {error && (
-          <p className="text-red-600 text-sm mt-1">
+          <p className="text-destructive text-sm mt-1">
             ⚠️ {error}
           </p>
         )}
@@ -394,7 +394,7 @@ function SectionResumable() {
     } catch (e: any) {
       const message = e?.message || "Upload failed";
       if (message.includes("Upload not found")) {
-        setError(`${message}. Re-run “Create resumable session” then retry chunks.`);
+        setError(`${message}. Re-run "Create resumable session" then retry chunks.`);
       } else if (message.includes("Content-Range")) {
         setError(`${message}. Double-check chunk byte math and file size.`);
       } else {
@@ -409,10 +409,10 @@ function SectionResumable() {
   return (
     <section id="resumable" className="space-y-3">
       <div className="flex items-center justify-between gap-4">
-        <h2 className="text-xl font-semibold">3) Resumable Uploads + Progress</h2>
+        <h2 className="text-xl font-semibold text-foreground">3) Resumable Uploads + Progress</h2>
         <button
           type="button"
-          className="text-sm underline"
+          className="text-sm text-primary hover:text-primary/80 underline"
           onClick={() => setShowDetails((prev) => !prev)}
           aria-expanded={showDetails}
           aria-controls={contentId}
@@ -440,14 +440,14 @@ function SectionResumable() {
         <button
           onClick={uploadChunks}
           disabled={!file || busy}
-          className="bg-black text-white px-4 py-2 rounded"
+          className="bg-primary text-primary-foreground px-4 py-2 rounded hover:bg-primary/90 disabled:opacity-50"
           title="Creates a resumable session, then uploads in chunks with Content-Range"
         >
           {busy ? `Uploading… ${progress}%` : "Upload (Resumable)"}
         </button>
 
-        <div className="text-sm">Progress: {progress}%</div>
-        {error && <p className="text-red-600 text-sm">{error}</p>}
+        <div className="text-sm text-foreground">Progress: {progress}%</div>
+        {error && <p className="text-destructive text-sm">{error}</p>}
         {resultUrl && (
           <div className="space-y-1">
             <p className="text-xs">✅ Completed upload. Playing result:</p>
@@ -512,10 +512,10 @@ function SectionSignedGet() {
   return (
     <section id="signed-get" className="space-y-3">
       <div className="flex items-center justify-between gap-4">
-        <h2 className="text-xl font-semibold">4) Delivery: Signed GET (Private Playback)</h2>
+        <h2 className="text-xl font-semibold text-foreground">4) Delivery: Signed GET (Private Playback)</h2>
         <button
           type="button"
-          className="text-sm underline"
+          className="text-sm text-primary hover:text-primary/80 underline"
           onClick={() => setShowDetails((prev) => !prev)}
           aria-expanded={showDetails}
           aria-controls={contentId}
@@ -540,14 +540,14 @@ function SectionSignedGet() {
 
         <div className="flex gap-2">
           <input
-            className="w-full border p-2 rounded"
+            className="w-full border border-input bg-background text-foreground p-2 rounded"
             placeholder="uploads/my-video.mp4"
             value={path}
             onChange={(e) => setPath(e.target.value)}
           />
           <button
             onClick={signPlayback}
-            className="bg-black text-white px-4 py-2 rounded"
+            className="bg-primary text-primary-foreground px-4 py-2 rounded hover:bg-primary/90 disabled:opacity-50"
             title="Calls /api/sign-get to mint a temporary playback URL"
             disabled={busy || !path}
           >
@@ -555,10 +555,10 @@ function SectionSignedGet() {
           </button>
         </div>
 
-        {error && <p className="text-red-600 text-sm">{error}</p>}
+        {error && <p className="text-destructive text-sm">{error}</p>}
         {playUrl && (
           <div className="space-y-1">
-            <p className="text-xs break-all">🔒 Signed (expiring) URL: {playUrl}</p>
+            <p className="text-xs break-all text-muted-foreground">🔒 Signed (expiring) URL: {playUrl}</p>
             <video controls className="w-full rounded" src={playUrl} />
           </div>
         )}
@@ -586,44 +586,44 @@ export default function TutorialPage() {
   }, []);
 
   return (
-    <main className="p-8 mx-auto max-w-4xl space-y-10">
+    <main className="p-8 mx-auto max-w-4xl space-y-10 bg-background text-foreground min-h-screen">
       <header className="space-y-2">
-        <h1 className="text-2xl font-bold">Ultimate Uploads &amp; Delivery</h1>
-        <p className="text-sm text-gray-600">
+        <h1 className="text-2xl font-bold text-foreground">Ultimate Uploads &amp; Delivery</h1>
+        <p className="text-sm text-muted-foreground">
           One page, four flows. Each button states which API it calls and what response to expect.
         </p>
         <nav className="text-sm flex flex-wrap gap-4">
-          <a className="underline" href="#url-upload">1) URL Upload</a>
-          <a className="underline" href="#signed-put">2) Signed PUT</a>
-          <a className="underline" href="#resumable">3) Resumable</a>
-          <a className="underline" href="#signed-get">4) Signed GET</a>
+          <a className="text-primary hover:text-primary/80 underline" href="#url-upload">1) URL Upload</a>
+          <a className="text-primary hover:text-primary/80 underline" href="#signed-put">2) Signed PUT</a>
+          <a className="text-primary hover:text-primary/80 underline" href="#resumable">3) Resumable</a>
+          <a className="text-primary hover:text-primary/80 underline" href="#signed-get">4) Signed GET</a>
         </nav>
       </header>
 
       <SectionUrlUpload />
-      <hr className="my-6" />
+      <hr className="my-6 border-border" />
 
       <SectionSignedPut />
-      <hr className="my-6" />
+      <hr className="my-6 border-border" />
 
       <SectionResumable />
-      <hr className="my-6" />
+      <hr className="my-6 border-border" />
 
       <SectionSignedGet />
 
       {!!files.length && (
         <>
-          <hr className="my-6" />
+          <hr className="my-6 border-border" />
           <section id="gallery" className="space-y-3">
-            <h2 className="text-lg font-semibold">Recent files (from /api/files)</h2>
-            <Hint>Use these <em>paths</em> with the “Signed GET” section.</Hint>
+            <h2 className="text-lg font-semibold text-foreground">Recent files (from /api/files)</h2>
+            <Hint>Use these <em>paths</em> with the "Signed GET" section.</Hint>
             <ul className="grid sm:grid-cols-2 gap-4">
               {files.filter(Boolean).map((f, idx) => {
                 const file = (typeof f === "object" && f !== null) ? f : {};
                 const id = typeof file.id === "string" ? file.id : `file-${idx}`;
                 return (
-                  <li key={id} className="border p-2 rounded">
-                  <div className="text-xs text-gray-600 break-all">
+                  <li key={id} className="border border-border bg-card p-2 rounded">
+                  <div className="text-xs text-muted-foreground break-all">
                     path: {file.path || file.filename || file.id || "unknown"}
                   </div>
                   {file.kind === "video" ? (
@@ -631,7 +631,7 @@ export default function TutorialPage() {
                   ) : file.kind === "image" ? (
                     <img alt={file.filename || file.id || `file-${idx}`} className="w-full rounded mt-2" src={file.url} />
                   ) : (
-                    <a className="underline mt-2 inline-block" href={file.url}>
+                    <a className="text-primary hover:text-primary/80 underline mt-2 inline-block" href={file.url}>
                       {file.filename || file.url || file.id || "View file"}
                     </a>
                   )}
