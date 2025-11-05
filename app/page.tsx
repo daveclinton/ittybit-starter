@@ -1,213 +1,646 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Cloud, File, AlertCircle, Loader2 } from "lucide-react"
+import { useEffect, useState, type ReactNode } from "react";
 
-interface FileItem {
-  id: string
-  filename: string
-  url: string
-  uploading?: boolean
-  error?: string
+/* ------------------------------------------------------------------
+ * Tiny UI helpers
+ * ------------------------------------------------------------------*/
+function Callout({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="rounded border p-3 bg-gray-50">
+      <p className="font-medium">{title}</p>
+      <div className="mt-1 text-sm text-gray-700">{children}</div>
+    </div>
+  );
 }
 
-export default function FileUploadDemo() {
-  const [file, setFile] = useState<File | null>(null)
-  const [files, setFiles] = useState<FileItem[]>([
-    { id: "1", filename: "project-proposal.pdf", url: "#" },
-    { id: "2", filename: "design-mockups.figma", url: "#" },
-  ])
-  const [renameMap, setRenameMap] = useState<Record<string, string>>({})
-  const [isFilesLoading, setIsFilesLoading] = useState(false)
-  const [uploadMutation, setUploadMutation] = useState({ isPending: false, error: null as string | null })
-  const [renameMutation, setRenameMutation] = useState({ isPending: false })
-  const [deleteMutation, setDeleteMutation] = useState({ isPending: false })
-  const [deleteErrorId, setDeleteErrorId] = useState<string | null>(null)
-  const [renameErrorId, setRenameErrorId] = useState<string | null>(null)
+function Hint({ children }: { children: ReactNode }) {
+  return <p className="text-xs text-gray-500">{children}</p>;
+}
 
-  const handleUpload = async () => {
-    if (!file) return
+/* ==================================================================
+ * SECTION 1 — URL Upload → Playback
+ * What: Send a public .mp4 URL to /api/upload (server proxies to POST https://api.ittybit.com/files)
+ * Why: Easiest “hello world” to get a playable URL back.
+ * ==================================================================*/
+function SectionUrlUpload() {
+  const [inputUrl, setInputUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [file, setFile] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const [statusText, setStatusText] = useState<string | null>(null);
 
-    setUploadMutation({ isPending: true, error: null })
+  async function handleUpload() {
+    setLoading(true);
+    setError(null);
+    setFile(null);
+    setTaskId(null);
+    setStatusText(null);
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: inputUrl }),
+      });
 
-    // Simulate upload
-    setTimeout(() => {
-      if (Math.random() > 0.1) {
-        const newFile: FileItem = {
-          id: Date.now().toString(),
-          filename: file.name,
-          url: "#",
+      const data = await res.json().catch(() => null);
+
+      if (res.ok && data?.id?.startsWith?.("file_") && data?.url) {
+        setFile(data);
+        return;
+      }
+
+      if (res.ok && data?.done && data?.file?.id?.startsWith?.("file_") && data?.file?.url) {
+        setFile(data.file);
+        return;
+      }
+
+      const pendingTask = data?.task ?? data;
+      if ((res.status === 202 || res.ok) && pendingTask?.id) {
+        const id = String(pendingTask.id);
+        setTaskId(id);
+        setStatusText("Ingesting…");
+
+        let tries = 0;
+        const maxTries = 20;
+        while (tries < maxTries) {
+          const statusRes = await fetch(`/api/task?id=${encodeURIComponent(id)}`);
+          const body = await statusRes.json().catch(() => null);
+
+          if (statusRes.ok && body?.done && body?.file?.id?.startsWith?.("file_") && body?.file?.url) {
+            setFile(body.file);
+            setStatusText(null);
+            return;
+          }
+
+          if (!statusRes.ok) {
+            throw new Error(body?.message || "Polling failed");
+          }
+
+          tries += 1;
+          setStatusText(`Ingesting… (${tries})`);
+          await new Promise((resolve) => setTimeout(resolve, 750));
         }
-        setFiles((prev) => [newFile, ...prev])
-        setFile(null)
-        setUploadMutation({ isPending: false, error: null })
-      } else {
-        setUploadMutation({ isPending: false, error: "Failed to upload file. Please try again." })
+
+        setError("Still processing. Try again shortly.");
+        setStatusText(null);
+        return;
       }
-    }, 1500)
-  }
 
-  const handleRename = (fileId: string) => {
-    setRenameMutation({ isPending: true })
-    setRenameErrorId(null)
-
-    setTimeout(() => {
-      if (Math.random() > 0.15) {
-        setFiles((prev) => prev.map((f) => (f.id === fileId ? { ...f, filename: renameMap[fileId] || f.filename } : f)))
-        setRenameMap((prev) => {
-          const updated = { ...prev }
-          delete updated[fileId]
-          return updated
-        })
-        setRenameMutation({ isPending: false })
-      } else {
-        setRenameErrorId(fileId)
-        setRenameMutation({ isPending: false })
-      }
-    }, 1200)
-  }
-
-  const handleDelete = (fileId: string) => {
-    setDeleteMutation({ isPending: true })
-    setDeleteErrorId(null)
-
-    setTimeout(() => {
-      if (Math.random() > 0.15) {
-        setFiles((prev) => prev.filter((f) => f.id !== fileId))
-        setDeleteMutation({ isPending: false })
-      } else {
-        setDeleteErrorId(fileId)
-        setDeleteMutation({ isPending: false })
-      }
-    }, 1200)
-  }
-
-  const updateRenameValue = (id: string, value: string) => {
-    setRenameMap((prev) => ({ ...prev, [id]: value }))
-    setRenameErrorId(null)
+      throw new Error(data?.message || "Upload failed");
+    } catch (e: any) {
+      setError(e.message || "Something went wrong");
+      setStatusText(null);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <main className="min-h-screen bg-background p-8">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-foreground mb-2">Media Management</h1>
-          <p className="text-muted-foreground">Upload, manage, and organize your files</p>
+    <section id="url-upload" className="space-y-3">
+      <h2 className="text-xl font-semibold">1) URL Upload → Playback</h2>
+
+      <Callout title="What this does">
+        <ol className="list-decimal ml-5 space-y-1">
+          <li>Paste a public <code>.mp4</code> /<code>.mp3</code> /<code>.png</code> /<code>.jpg</code> URL.</li>
+          <li>Click <strong>Upload</strong> → our server calls <code>POST /files</code> with that URL.</li>
+          <li>Ittybit ingests the video and returns a <strong>delivery URL</strong>.</li>
+          <li>We render that URL in a <code>&lt;video&gt;</code> player.</li>
+        </ol>
+        <Hint>
+          Expected response:&nbsp;
+          <code>{'{ id, status: "ready", url }'}</code>. For very large files, processing can take a
+          moment—reload the gallery below if you don’t see it immediately.
+        </Hint>
+      </Callout>
+
+      <div className="flex gap-2">
+        <input
+          className="flex-1 border p-2 rounded"
+          placeholder="https://example.com/video.mp4"
+          value={inputUrl}
+          onChange={(e) => setInputUrl(e.target.value)}
+        />
+        <button
+          onClick={handleUpload}
+          disabled={!inputUrl || loading}
+          className="bg-black text-white px-4 py-2 rounded"
+          title="Calls /api/upload → Ittybit POST /files with { url }"
+        >
+          {loading ? "Uploading…" : "Upload"}
+        </button>
+      </div>
+
+      {error && <p className="text-red-600 text-sm">{error}</p>}
+      {statusText && (
+        <p className="text-xs text-gray-600">
+          {statusText}
+          {taskId ? ` (task ${taskId})` : ""}
+        </p>
+      )}
+
+      {file && (
+        <div className="space-y-1">
+          <p className="text-xs text-gray-600 break-all">
+            ✅ Created file <code>{file.id}</code> — playing delivery URL below:
+          </p>
+          <video controls className="w-full rounded" src={file.url} />
         </div>
+      )}
+    </section>
+  );
+}
 
-        {/* Upload Section */}
-        <div className="bg-card border border-border rounded-lg p-6 mb-8">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="flex-1 flex items-center gap-3 bg-secondary rounded-lg p-4 border border-border cursor-pointer hover:border-accent/50 transition-colors">
-              <Cloud className="w-5 h-5 text-accent" />
-              <input
-                type="file"
-                onChange={(e) => {
-                  setFile(e.target.files?.[0] || null)
-                  setUploadMutation({ isPending: false, error: null })
-                }}
-                className="hidden"
-                id="file-input"
-              />
-              <label htmlFor="file-input" className="flex-1 cursor-pointer text-sm">
-                <span className="text-muted-foreground">
-                  {file ? file.name : "Click to select a file or drag and drop"}
-                </span>
-              </label>
-            </div>
+/* ==================================================================
+ * SECTION 2 — Signed Uploads (Client-safe PUT)
+ * What: Browser asks our server for a short-lived PUT URL, then uploads directly to Ittybit.
+ * Why: No API key in the client; faster path for local files.
+ * ==================================================================*/
+function SectionSignedPut() {
+  const [file, setFile] = useState<File | null>(null);
+  const [uploadUrl, setUploadUrl] = useState<string | null>(null);
+  const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+
+  useEffect(() => {
+    const targetHash = "#signed-put";
+    const openIfHashMatches = () => {
+      if (window.location.hash === targetHash) setShowDetails(true);
+    };
+
+    openIfHashMatches();
+    window.addEventListener("hashchange", openIfHashMatches);
+    return () => window.removeEventListener("hashchange", openIfHashMatches);
+  }, []);
+
+  async function startUpload() {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    setUploadUrl(null);
+    setResultUrl(null);
+
+    try {
+      // 1) Ask our server to mint a signed PUT URL.
+      const sigRes = await fetch("/api/sign-put", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name }),
+      });
+      const sig = await sigRes.json();
+      if (!sigRes.ok) throw new Error(sig?.message || "Could not sign upload");
+      if (!sig?.url) throw new Error("No signed URL returned");
+      setUploadUrl(sig.url);
+
+      // 2) Upload the file directly to Ittybit via PUT.
+      const put = await fetch(sig.url, { method: "PUT", body: file });
+
+      // Final response: 201 Created, often with no JSON body
+      if (put.status === 201) {
+        let created = null;
+        try {
+          created = await put.json();
+        } catch {
+          // ignore — some responses aren't JSON
+        }
+
+        const cleanUrl = sig.url.split("?")[0];
+        setResultUrl(created?.url ?? cleanUrl);
+      } else {
+        const text = await put.text().catch(() => "");
+        throw new Error(`Upload failed: ${put.status} ${text}`);
+      }
+    } catch (e: any) {
+      setError(e?.message || "Upload failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const contentId = "signed-put-content";
+
+  return (
+    <section id="signed-put" className="space-y-3">
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-xl font-semibold">2) Signed Uploads (Client-safe PUT)</h2>
+        <button
+          type="button"
+          className="text-sm underline"
+          onClick={() => setShowDetails((prev) => !prev)}
+          aria-expanded={showDetails}
+          aria-controls={contentId}
+        >
+          {showDetails ? "Hide details" : "Show details"}
+        </button>
+      </div>
+
+      <div
+        id={contentId}
+        className={showDetails ? "mt-3 space-y-3" : "hidden"}
+        aria-hidden={!showDetails}
+      >
+        <Callout title="What this does">
+          <ol className="list-decimal ml-5 space-y-1">
+            <li>Select a local media file.</li>
+            <li>Click the button → our server requests a signed URL from Ittybit.</li>
+            <li>The browser uploads <em>directly</em> to Ittybit via that URL.</li>
+            <li>On success you get a playable/viewable URL back.</li>
+          </ol>
+          <Hint>Expected: 200 (signature), then 201 (final PUT).</Hint>
+        </Callout>
+
+        <input type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+
+        <div className="flex gap-2">
+          <button
+            onClick={startUpload}
+            disabled={!file || busy}
+            className="bg-black text-white px-4 py-2 rounded"
+            title="Requests a signed PUT URL, then uploads the file to it"
+          >
+            {busy ? "Uploading…" : "Upload with Signed PUT"}
+          </button>
+
+          {uploadUrl && (
             <button
-              onClick={handleUpload}
-              disabled={uploadMutation.isPending || !file}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              type="button"
+              className="px-3 py-2 border rounded text-xs"
+              onClick={() => navigator.clipboard.writeText(uploadUrl)}
+              title="Copy the one-time signed upload URL"
             >
-              {uploadMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-              {uploadMutation.isPending ? "Uploading..." : "Upload"}
+              Copy signed URL
             </button>
-          </div>
-
-          {/* Upload Error */}
-          {uploadMutation.error && (
-            <div className="flex items-center gap-3 bg-destructive/10 border border-destructive/30 rounded-lg p-4">
-              <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0" />
-              <div>
-                <p className="text-destructive font-medium">Upload failed</p>
-                <p className="text-destructive/80 text-sm">{uploadMutation.error}</p>
-              </div>
-            </div>
           )}
         </div>
 
-        {/* Files Section */}
-        <div className="bg-card border border-border rounded-lg p-6">
-          <h2 className="text-2xl font-bold text-foreground mb-4">Your Files</h2>
+        {/* 🧠 Helpful output and error messages */}
+        {uploadUrl && <p className="text-xs break-all">PUT → {uploadUrl}</p>}
+        {resultUrl && (
+          <p className="text-xs break-all text-green-700">
+            ✅ Uploaded successfully → {resultUrl}
+          </p>
+        )}
+        {error && (
+          <p className="text-red-600 text-sm mt-1">
+            ⚠️ {error}
+          </p>
+        )}
 
-          {isFilesLoading ? (
-            <div className="flex flex-col items-center justify-center py-12 gap-3">
-              <Loader2 className="w-8 h-8 text-accent animate-spin" />
-              <p className="text-muted-foreground">Loading files...</p>
-            </div>
-          ) : files.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 gap-3">
-              <File className="w-12 h-12 text-muted" />
-              <p className="text-muted-foreground text-lg">No files uploaded yet</p>
-            </div>
-          ) : (
-            <ul className="space-y-3">
-              {files.map((f) => (
-                <li
-                  key={f.id}
-                  className="flex items-center justify-between bg-secondary border border-border rounded-lg p-4 hover:border-accent/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <File className="w-5 h-5 text-accent flex-shrink-0" />
-                    <a href={f.url} className="text-primary hover:text-accent underline truncate">
-                      {f.filename}
+        {/* Optional playback for supported files */}
+        {resultUrl && (
+  <div className="space-y-1 mt-2">
+    <p className="text-xs">Playing uploaded file:</p>
+
+    {/* Detect file type and render appropriately */}
+    {/\.(mp4|webm|mov)$/i.test(file?.name || resultUrl) ? (
+      <video controls className="w-full rounded" src={resultUrl} />
+    ) : /\.(mp3|wav|ogg)$/i.test(file?.name || resultUrl) ? (
+      <audio controls className="w-full rounded" src={resultUrl} />
+    ) : /\.(png|jpg|jpeg|gif|webp)$/i.test(file?.name || resultUrl) ? (
+      <img alt={file?.name || "Uploaded image"} className="w-full rounded" src={resultUrl} />
+    ) : (
+      <a
+        href={resultUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline text-sm text-blue-600"
+      >
+        View uploaded file
+      </a>
+    )}
+  </div>
+)}
+      </div>
+    </section>
+  );
+}
+/* ==================================================================
+ * SECTION 3 — Resumable / Chunked Uploads + Progress
+ * What: Request a resumable session, then send the file in 16MB chunks with Content-Range.
+ * Why: Reliable for large files; shows progress; survives flaky networks.
+ * ==================================================================*/
+function SectionResumable() {
+  const [file, setFile] = useState<File | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+
+  const CHUNK_SIZE = 16 * 1024 * 1024; // 16MB
+
+  useEffect(() => {
+    const targetHash = "#resumable";
+    const openIfHashMatches = () => {
+      if (window.location.hash === targetHash) setShowDetails(true);
+    };
+
+    openIfHashMatches();
+    window.addEventListener("hashchange", openIfHashMatches);
+    return () => window.removeEventListener("hashchange", openIfHashMatches);
+  }, []);
+
+  async function uploadChunks() {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    setResultUrl(null);
+    setProgress(0);
+
+    try {
+      // 1) Create a resumable session that accepts chunked PUTs.
+      const sessionRes = await fetch("/api/resumable", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name }),
+      });
+      const session = await sessionRes.json();
+      if (!sessionRes.ok) throw new Error(session?.message || "Could not start resumable upload");
+      if (!session?.url) throw new Error("No resumable URL returned");
+
+      const baseUrl = session.url as string;
+
+      // 2) Send chunks with Content-Range.
+      let offset = 0;
+      while (offset < file.size) {
+        const end = Math.min(offset + CHUNK_SIZE, file.size);
+        const chunk = file.slice(offset, end);
+        const contentRange = `bytes=${offset}-${end - 1}/${file.size}`;
+        const isLastChunk = end === file.size;
+
+        const put = await fetch(baseUrl, {
+          method: "PUT",
+          headers: { "Content-Range": contentRange },
+          body: chunk,
+        });
+
+        // 202 for partial chunks, 200/201/204 when the final chunk completes.
+        if (![200, 201, 202, 204].includes(put.status)) {
+          const text = await put.text().catch(() => "");
+          throw new Error(`Chunk failed (${put.status}): ${text}`);
+        }
+
+        offset = end;
+        setProgress(Math.round((offset / file.size) * 100));
+
+        if (isLastChunk && put.status !== 202) {
+          const created = await put.json().catch(() => null);
+          setResultUrl(created?.url ?? session?.file?.url ?? baseUrl.split("?")[0]);
+        }
+      }
+    } catch (e: any) {
+      const message = e?.message || "Upload failed";
+      if (message.includes("Upload not found")) {
+        setError(`${message}. Re-run “Create resumable session” then retry chunks.`);
+      } else if (message.includes("Content-Range")) {
+        setError(`${message}. Double-check chunk byte math and file size.`);
+      } else {
+        setError(message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+  const contentId = "resumable-content";
+
+  return (
+    <section id="resumable" className="space-y-3">
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-xl font-semibold">3) Resumable Uploads + Progress</h2>
+        <button
+          type="button"
+          className="text-sm underline"
+          onClick={() => setShowDetails((prev) => !prev)}
+          aria-expanded={showDetails}
+          aria-controls={contentId}
+        >
+          {showDetails ? "Hide details" : "Show details"}
+        </button>
+      </div>
+
+      <div
+        id={contentId}
+        className={showDetails ? "mt-3 space-y-3" : "hidden"}
+        aria-hidden={!showDetails}
+      >
+        <Callout title="What this does">
+          <ol className="list-decimal ml-5 space-y-1">
+            <li>Pick a large file (e.g., &gt;100MB).</li>
+            <li>We mint a resumable session URL, then send the file in 16MB chunks.</li>
+            <li>Server replies <code>202</code> for partial chunks; the final chunk returns <code>201</code>.</li>
+            <li>You see a live progress percentage as chunks finish.</li>
+          </ol>
+          <Hint>If your connection drops, retrying will re-send only the remaining chunks (this demo keeps it simple).</Hint>
+        </Callout>
+
+        <input type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        <button
+          onClick={uploadChunks}
+          disabled={!file || busy}
+          className="bg-black text-white px-4 py-2 rounded"
+          title="Creates a resumable session, then uploads in chunks with Content-Range"
+        >
+          {busy ? `Uploading… ${progress}%` : "Upload (Resumable)"}
+        </button>
+
+        <div className="text-sm">Progress: {progress}%</div>
+        {error && <p className="text-red-600 text-sm">{error}</p>}
+        {resultUrl && (
+          <div className="space-y-1">
+            <p className="text-xs">✅ Completed upload. Playing result:</p>
+            <video controls className="w-full rounded" src={resultUrl} />
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ==================================================================
+ * SECTION 4 — Delivery: Signed GET (Private Playback)
+ * What: Provide folder/filename, server mints an expiring GET URL, we play it.
+ * Why: Protect private content; control who can watch and for how long.
+ * ==================================================================*/
+function SectionSignedGet() {
+  const [path, setPath] = useState(""); // ex: "uploads/my-video.mp4"
+  const [playUrl, setPlayUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+
+  useEffect(() => {
+    const targetHash = "#signed-get";
+    const openIfHashMatches = () => {
+      if (window.location.hash === targetHash) setShowDetails(true);
+    };
+
+    openIfHashMatches();
+    window.addEventListener("hashchange", openIfHashMatches);
+    return () => window.removeEventListener("hashchange", openIfHashMatches);
+  }, []);
+
+  async function signPlayback() {
+    setError(null);
+    setPlayUrl(null);
+    setBusy(true);
+
+    try {
+      const parts = (path || "").split("/").filter(Boolean);
+      const filename = parts.pop() || "";
+      const folder = parts.join("/");
+
+      const res = await fetch("/api/sign-get", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename, folder }),
+      });
+      const sig = await res.json();
+      if (!res.ok) throw new Error(sig?.message || "Failed to sign URL");
+      if (!sig?.url) throw new Error("No playback URL returned");
+      setPlayUrl(sig.url);
+    } catch (e: any) {
+      setError(e.message || "Signing failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const contentId = "signed-get-content";
+
+  return (
+    <section id="signed-get" className="space-y-3">
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-xl font-semibold">4) Delivery: Signed GET (Private Playback)</h2>
+        <button
+          type="button"
+          className="text-sm underline"
+          onClick={() => setShowDetails((prev) => !prev)}
+          aria-expanded={showDetails}
+          aria-controls={contentId}
+        >
+          {showDetails ? "Hide details" : "Show details"}
+        </button>
+      </div>
+
+      <div
+        id={contentId}
+        className={showDetails ? "mt-3 space-y-3" : "hidden"}
+        aria-hidden={!showDetails}
+      >
+        <Callout title="What this does">
+          <ol className="list-decimal ml-5 space-y-1">
+            <li>Enter a stored path (e.g., <code>uploads/my-video.mp4</code>).</li>
+            <li>Click the button → server requests a temporary GET URL.</li>
+            <li>We play that expiring link below.</li>
+          </ol>
+          <Hint>Great for members-only videos, course content, or internal footage.</Hint>
+        </Callout>
+
+        <div className="flex gap-2">
+          <input
+            className="w-full border p-2 rounded"
+            placeholder="uploads/my-video.mp4"
+            value={path}
+            onChange={(e) => setPath(e.target.value)}
+          />
+          <button
+            onClick={signPlayback}
+            className="bg-black text-white px-4 py-2 rounded"
+            title="Calls /api/sign-get to mint a temporary playback URL"
+            disabled={busy || !path}
+          >
+            {busy ? "Signing…" : "Get signed playback link"}
+          </button>
+        </div>
+
+        {error && <p className="text-red-600 text-sm">{error}</p>}
+        {playUrl && (
+          <div className="space-y-1">
+            <p className="text-xs break-all">🔒 Signed (expiring) URL: {playUrl}</p>
+            <video controls className="w-full rounded" src={playUrl} />
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ==================================================================
+ * MAIN PAGE — TOC + optional gallery
+ * ==================================================================*/
+export default function TutorialPage() {
+  // Optional gallery (helps you find paths to test Signed GET)
+  const [files, setFiles] = useState<any[]>([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/files");
+        const data = await res.json();
+        if (Array.isArray(data)) setFiles(data);
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
+
+  return (
+    <main className="p-8 mx-auto max-w-4xl space-y-10">
+      <header className="space-y-2">
+        <h1 className="text-2xl font-bold">Ultimate Uploads &amp; Delivery</h1>
+        <p className="text-sm text-gray-600">
+          One page, four flows. Each button states which API it calls and what response to expect.
+        </p>
+        <nav className="text-sm flex flex-wrap gap-4">
+          <a className="underline" href="#url-upload">1) URL Upload</a>
+          <a className="underline" href="#signed-put">2) Signed PUT</a>
+          <a className="underline" href="#resumable">3) Resumable</a>
+          <a className="underline" href="#signed-get">4) Signed GET</a>
+        </nav>
+      </header>
+
+      <SectionUrlUpload />
+      <hr className="my-6" />
+
+      <SectionSignedPut />
+      <hr className="my-6" />
+
+      <SectionResumable />
+      <hr className="my-6" />
+
+      <SectionSignedGet />
+
+      {!!files.length && (
+        <>
+          <hr className="my-6" />
+          <section id="gallery" className="space-y-3">
+            <h2 className="text-lg font-semibold">Recent files (from /api/files)</h2>
+            <Hint>Use these <em>paths</em> with the “Signed GET” section.</Hint>
+            <ul className="grid sm:grid-cols-2 gap-4">
+              {files.filter(Boolean).map((f, idx) => {
+                const file = (typeof f === "object" && f !== null) ? f : {};
+                const id = typeof file.id === "string" ? file.id : `file-${idx}`;
+                return (
+                  <li key={id} className="border p-2 rounded">
+                  <div className="text-xs text-gray-600 break-all">
+                    path: {file.path || file.filename || file.id || "unknown"}
+                  </div>
+                  {file.kind === "video" ? (
+                    <video controls className="w-full rounded mt-2" src={file.url} />
+                  ) : file.kind === "image" ? (
+                    <img alt={file.filename || file.id || `file-${idx}`} className="w-full rounded mt-2" src={file.url} />
+                  ) : (
+                    <a className="underline mt-2 inline-block" href={file.url}>
+                      {file.filename || file.url || file.id || "View file"}
                     </a>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-shrink-0 ml-4">
-                    <input
-                      type="text"
-                      placeholder="New name"
-                      className="bg-input border border-border px-3 py-2 rounded text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary w-40"
-                      value={renameMap[f.id] || ""}
-                      onChange={(e) => updateRenameValue(f.id, e.target.value)}
-                    />
-                    <button
-                      onClick={() => handleRename(f.id)}
-                      disabled={renameMutation.isPending}
-                      className="bg-primary/20 hover:bg-primary/30 text-primary text-xs px-3 py-2 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                    >
-                      {renameMutation.isPending && <Loader2 className="w-3 h-3 animate-spin" />}
-                      {renameMutation.isPending ? "Renaming..." : "Rename"}
-                    </button>
-                    <button
-                      onClick={() => handleDelete(f.id)}
-                      disabled={deleteMutation.isPending}
-                      className="bg-destructive/20 hover:bg-destructive/30 text-destructive text-xs px-3 py-2 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                    >
-                      {deleteMutation.isPending && <Loader2 className="w-3 h-3 animate-spin" />}
-                      {deleteMutation.isPending ? "Deleting..." : "Delete"}
-                    </button>
-                  </div>
-
-                  {renameErrorId === f.id && (
-                    <div className="absolute right-4 mt-12 bg-destructive/10 border border-destructive/30 rounded px-3 py-2 text-sm text-destructive whitespace-nowrap">
-                      Rename failed
-                    </div>
-                  )}
-                  {deleteErrorId === f.id && (
-                    <div className="absolute right-4 mt-12 bg-destructive/10 border border-destructive/30 rounded px-3 py-2 text-sm text-destructive whitespace-nowrap">
-                      Delete failed
-                    </div>
                   )}
                 </li>
-              ))}
+              )})}
             </ul>
-          )}
-        </div>
-      </div>
+          </section>
+        </>
+      )}
     </main>
-  )
+  );
 }
